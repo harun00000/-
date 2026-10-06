@@ -13,6 +13,8 @@ add_executable(library_sim
     src/reader.c
     src/request.c
     src/simulation.c
+    src/main_utils.c
+    src/config.c
 )
 target_include_directories(library_sim PRIVATE include)
 target_compile_options(library_sim PRIVATE -Wall -Wextra -Wpedantic)
