@@ -113,6 +113,7 @@ bool config_load(const char *filename, Config *config){
 
     // очищаем Config перед заполнением
     *config = (Config){0};
+    config->issue_strategy = ISSUE_FIFO;
     char line[CONFIG_LINE_SIZE];
     int line_number = 0;
     bool has_reading_days = false;
@@ -166,6 +167,20 @@ bool config_load(const char *filename, Config *config){
                 break;
             }
             has_total_days = true;
+
+        } else if (strcmp(line, "strategy") == 0)
+        {
+            if (strcmp(value, "fifo") == 0)
+            {
+                config->issue_strategy = ISSUE_FIFO;
+            } else if (strcmp(value, "lifo") == 0)
+            {
+                config->issue_strategy = ISSUE_LIFO;
+            } else
+            {
+                error = "strategy должен быть fifo или lifo";
+                break;
+            }
 
         } else if (strcmp(line, "book") == 0)
         {

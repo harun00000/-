@@ -15,8 +15,17 @@ do
     fi
 done
 
-echo "Tests passed: $passed/3"
-if [ "$passed" -ne 3 ]
+if output=$(./build/library_sim --config tests/strategy_lifo.txt) &&
+    printf '%s\n' "$output" | grep -Fq 'Книга Курочка ряба зарезервирована за читателем Виктор; владельца нет'
+then
+    echo "PASS: strategy_lifo.txt"
+    passed=$((passed + 1))
+else
+    echo "FAIL: strategy_lifo.txt"
+fi
+
+echo "Tests passed: $passed/4"
+if [ "$passed" -ne 4 ]
 then
     exit 1
 fi

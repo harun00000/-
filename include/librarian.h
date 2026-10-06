@@ -3,6 +3,7 @@
 
 #include "book.h"
 #include "reader.h"
+#include "logger.h"
 #include <stdio.h>
 
 enum { LIBRARIAN_NAME_SIZE = 67 };
@@ -24,6 +25,7 @@ typedef struct Librarian{
  */
 static inline void librarian_notify(const Librarian *librarian, const Reader *reader, const Book *book){
     printf("Библиотекарь %s уведомляет читателя %s: книга %s возвращена\n", librarian->name, reader->name, book->name);
+    logger_write("Библиотекарь %s уведомляет читателя %s: книга %s возвращена\n", librarian->name, reader->name, book->name);
 }
 
 #endif

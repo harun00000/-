@@ -15,6 +15,7 @@ typedef struct Config{
 
     int reading_days;
     int total_days;
+    IssueStrategy issue_strategy;
 } Config;
 
 /**

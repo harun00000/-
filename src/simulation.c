@@ -1,5 +1,6 @@
 #include "simulation.h"
 #include "check.h"
+#include "logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,7 +20,7 @@ static Reader *find_reader(Simulation *simulation, int reader_id){
 }
 
 void simulation_initialization(Simulation *simulation, const Book books[], int book_count,
-     const Reader readers[], int reader_count, int reading_days, const Librarian *librarian){
+     const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy){
     SOFT_ASSERT_VOID(simulation != NULL, "Указатель на симуляцию = NULL");
     SOFT_ASSERT_VOID(books != NULL, "Указатель на массив книг = NULL");
     SOFT_ASSERT_VOID(readers != NULL, "Указатель на массив читателей = NULL");
@@ -29,6 +30,7 @@ void simulation_initialization(Simulation *simulation, const Book books[], int b
     SOFT_ASSERT_VOID(reading_days > 0, "Срок чтения <= 0");
     SOFT_ASSERT_VOID(librarian != NULL, "Указатель на библиотекаря = NULL");
     SOFT_ASSERT_VOID(librarian->id > 0, "Идентификатор библиотекаря <= 0");
+    SOFT_ASSERT_VOID(issue_strategy == ISSUE_FIFO || issue_strategy == ISSUE_LIFO, "Неизвестная стратегия выдачи");
 
     // проверяем корректность книг и отсутствие одинаковых айдишников
     for (int idx = 0; idx < book_count; ++idx)
@@ -64,10 +66,12 @@ void simulation_initialization(Simulation *simulation, const Book books[], int b
 
     // заполняем симуляцию, переносим туда count и reading_days
     *simulation = (Simulation){0};
+    statistics_initialization(&simulation->statistics);
     simulation->librarian = *librarian;
     simulation->book_count = book_count;
     simulation->reader_count = reader_count;
     simulation->reading_days = reading_days;
+    simulation->issue_strategy = issue_strategy;
 
 
     // копируем книги и отмечаем, что у них пока нет владельца и резерва
@@ -94,6 +98,7 @@ static void notify_waiting_readers(Simulation *simulation, const Book *book){
         {
             Reader *reader = find_reader(simulation, request->reader_id);
             librarian_notify(&simulation->librarian, reader, book);
+            ++simulation->statistics.notifications_sent;
         }
     }
 }
@@ -105,7 +110,7 @@ static void reserve_after_return(Simulation *simulation, int book_index, int day
     // находим книгу и первую активную заявку на неё
     const Book *book = &simulation->books[book_index];
     notify_waiting_readers(simulation, book);
-    int first = request_find_first(simulation->requests, simulation->request_count, book->id);
+    int first = request_find(simulation->requests, simulation->request_count, book->id, simulation->issue_strategy);
 
     // если заявок нет, книга свободна!!
     if (first == REQUEST_INDEX_NOT_FOUND)
@@ -118,12 +123,14 @@ static void reserve_after_return(Simulation *simulation, int book_index, int day
     Request *request = &simulation->requests[first];
     Reader *reader = find_reader(simulation, request->reader_id);
     request_close(request);
+    ++simulation->statistics.requests_completed;
     simulation->reserved_reader_ids[book_index] = reader->id;
     simulation->reservation_days[book_index] = day;
 
     // выводим информацию в консоль
     printf("Выбрана заявка №%d (день %d), читатель %s. Заявка закрыта\n", first + 1, request->request_day, reader->name);
     printf("Книга %s зарезервирована за читателем %s; владельца нет\n", book->name, reader->name);
+    logger_write("Резервирование: книга %s, читатель %s, день %d\n", book->name, reader->name, day);
     printf("Получение возможно при посещении в более поздний день\n");
 }
 
@@ -154,8 +161,10 @@ static void returning(Simulation *simulation, int day){
             
             // то возвращаем книгу и печатаем информацию в консоль
             reader_remove_book(reader, book_id);
+            ++simulation->statistics.books_returned;
             simulation->owner_ids[index] = NO_READER;
             printf("  Возврат: %s возвращает книгу «%s».\n", reader->name, simulation->books[index].name);
+            logger_write("Возврат: %s возвращает книгу %s, день %d\n", reader->name, simulation->books[index].name, day);
             reserve_after_return(simulation, index, day);
         }
     }
@@ -196,10 +205,12 @@ static bool give_a_book(Simulation *simulation, Reader *reader, int index, int d
     simulation->reserved_reader_ids[index] = NO_READER;
     simulation->reservation_days[index] = 0;
     reader_delete_wish(reader, book->id); // удаляем из списка желаний после выдачи
+    ++simulation->statistics.books_given;
 
     printf("  %s: %s получает книгу %s. День возврата: %d.%s\n", reserved_for == NO_READER ? 
         "Выдача свободной книги" : "Выдача зарезервированной книги", reader->name, book->name, return_day,
         reserved_for == NO_READER ? "" : " Резервирование снято");
+    logger_write("Выдача: %s получает книгу %s, день %d, день возврата %d\n", reader->name, book->name, day, return_day);
     return true;
 }
 
@@ -249,10 +260,12 @@ static void wishes(Simulation *simulation, Reader *reader, int day){
         {
             Reader *owner = find_reader(simulation, simulation->owner_ids[index]);
             printf("Книга недоступна: занята, находится у читателя %s\n", owner->name);
+            logger_write("Книга недоступна: %s находится у читателя %s, запросил %s\n", book->name, owner->name, reader->name);
         } else
         {
             Reader *reserved = find_reader(simulation, simulation->reserved_reader_ids[index]);
             printf("Книга недоступна: зарезервирована за читателем %s\n", reserved->name);
+            logger_write("Книга недоступна: %s зарезервирована за читателем %s, запросил %s\n", book->name, reserved->name, reader->name);
         }
 
         // проверяем, нужно ли создавать новую заявку
@@ -271,6 +284,8 @@ static void wishes(Simulation *simulation, Reader *reader, int day){
                 exit(EXIT_FAILURE);
             }
             printf("Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name, book->name, day);
+            ++simulation->statistics.requests_created;
+            logger_write("Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name, book->name, day);
         }
 
         ++idx;
@@ -344,6 +359,7 @@ void simulation_run(Simulation *simulation, int total_days){
 
     // запускаем библиотеку 
     printf("Библиотека НАЧАЛА РАБОТАТЬ!. Количество дней работы: %d\n", total_days);
+    logger_write("Начало работы библиотеки: %d дней, срок чтения %d\n", total_days, simulation->reading_days);
     for (int day = FIRST_SIMULATION_DAY; day <= total_days; ++day)
     {
         printf("\nДень %d: начало\n", day);
@@ -357,6 +373,8 @@ void simulation_run(Simulation *simulation, int total_days){
             if (is_reader_visit_on_said_day(reader, day))
             {
                 printf("  Приход читателя: %s (id %d)\n", reader->name, reader->id);
+                ++simulation->statistics.reader_visits;
+                logger_write("Приход читателя: %s (id %d), день %d\n", reader->name, reader->id, day);
 
                 // обрабатываем его резервы, потом обычные желания
                 reservation(simulation, reader, day);
@@ -368,4 +386,6 @@ void simulation_run(Simulation *simulation, int total_days){
     print_unfulfilled_requests(simulation);
     print_unreceived_reservations(simulation);
     printf("\nБиблиотека В.С.Ё.\n");
+    logger_write("Завершение работы библиотеки\n");
+    statistics_print(&simulation->statistics);
 }

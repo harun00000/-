@@ -1,6 +1,7 @@
 #include "simulation.h"
 #include "main_utils.h"
 #include "config.h"
+#include "logger.h"
 #include <stdlib.h>
 
 enum{
@@ -38,6 +39,7 @@ int main(int argc, char *argv[]){
     int reader_count = (int)(sizeof readers / sizeof readers[0]);
     int reading_days = READING_DAYS;
     int total_days = TOTAL_DAYS;
+    IssueStrategy issue_strategy = ISSUE_FIFO;
     Config config;
 
     // если передан конфиг, то меняем стандартные данные на данные из файла
@@ -54,6 +56,7 @@ int main(int argc, char *argv[]){
         reader_count = config.reader_count;
         reading_days = config.reading_days;
         total_days = config.total_days;
+        issue_strategy = config.issue_strategy;
     }
 
     // т.к. параметры из командной строки имеют приоритет над данными из файла
@@ -68,9 +71,11 @@ int main(int argc, char *argv[]){
     }
 
     // создаем и запускаем симуляцию 
+    logger_open("library.log");
     Simulation simulation;
     simulation_initialization(&simulation, selected_books, book_count, 
-        selected_readers, reader_count, reading_days, &librarian);
+        selected_readers, reader_count, reading_days, &librarian, issue_strategy);
     simulation_run(&simulation, total_days);
+    logger_close();
     return EXIT_SUCCESS;
 }

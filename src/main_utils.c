@@ -98,7 +98,7 @@ bool parse_main_options(int argc, char *argv[], MainOptions *options){
 
 void print_help(void){
     printf("Использование:\n"
-        "  ./library_sim [опции]\n"
+        "  ./build/library_sim [опции]\n"
         "\n"
         "Опции:\n"
         "  -d, --days N          количество дней моделирования\n"

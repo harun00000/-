@@ -5,6 +5,7 @@
 #include "reader.h"
 #include "request.h"
 #include "librarian.h"
+#include "statistics.h"
 
 enum{
     MAX_BOOKS = 15,
@@ -20,6 +21,7 @@ enum{
  * @brief Структура "Симуляция" - состояния библиотеки и срок чтения книг.
  */
 typedef struct Simulation{
+    Statistics statistics;
     Librarian librarian;
     Book books[MAX_BOOKS];
     int book_count;
@@ -35,6 +37,7 @@ typedef struct Simulation{
     int reserved_reader_ids[MAX_BOOKS]; // читатели с резервом; -1 если резерва нет
     int reservation_days[MAX_BOOKS];    // дни создания соответствующих резервов
     int reading_days;
+    IssueStrategy issue_strategy;
 } Simulation;
 
 /**
@@ -47,9 +50,10 @@ typedef struct Simulation{
  * @param reader_count количество читателей.
  * @param reading_days положительное число дней чтения одной книги.
  * @param librarian библиотекарь.
+ * @param issue_strategy стратегия выдачи возвращённых книг.
  */
 void simulation_initialization(Simulation *simulation, const Book books[], int book_count, 
-    const Reader readers[], int reader_count, int reading_days, const Librarian *librarian);
+    const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy);
 
 /**
  * @brief Работу библиотеки с первого дня по указанный день.

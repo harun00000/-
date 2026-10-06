@@ -60,3 +60,25 @@ int request_find_first(const Request requests[], int count, int book_id){
     }
     return first;
 }
+
+int request_find(const Request requests[], int count, int book_id, IssueStrategy strategy){
+    SOFT_ASSERT(requests != NULL, "Указатель на массив заявок = NULL", REQUEST_INDEX_NOT_FOUND);
+    SOFT_ASSERT(count >= 0, "Количество элементов < 0", REQUEST_INDEX_NOT_FOUND);
+    SOFT_ASSERT(book_id > 0, "Идентификатор книги <= 0", REQUEST_INDEX_NOT_FOUND);
+    SOFT_ASSERT(strategy == ISSUE_FIFO || strategy == ISSUE_LIFO, "Неизвестная стратегия выдачи", REQUEST_INDEX_NOT_FOUND);
+
+    if (strategy == ISSUE_FIFO)
+    {
+        return request_find_first(requests, count, book_id);
+    }
+    int last = REQUEST_INDEX_NOT_FOUND;
+    for (int idx = 0; idx < count; ++idx)
+    {
+        if (requests[idx].is_active && requests[idx].book_id == book_id &&
+            (last == REQUEST_INDEX_NOT_FOUND || requests[idx].request_day >= requests[last].request_day))
+        {
+            last = idx;
+        }
+    }
+    return last;
+}

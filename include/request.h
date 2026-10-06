@@ -5,6 +5,11 @@
 
 enum { REQUEST_INDEX_NOT_FOUND = -1, MAX_REQUESTS = 300 };
 
+typedef enum IssueStrategy{
+    ISSUE_FIFO,
+    ISSUE_LIFO
+} IssueStrategy;
+
 /**
  * @brief Заявка читателя на получение книги.
  */
@@ -52,5 +57,16 @@ void request_close(Request *request);
  * @return Индекс заявки (REQUEST_INDEX_NOT_FOUND если активных заявок нет).
  */
 int request_find_first(const Request requests[], int count, int book_id);
+
+/**
+ * @brief Выбирает активную заявку на книгу по заданной стратегии.
+ *
+ * @param requests массив заявок.
+ * @param count количество заявок.
+ * @param book_id айди книги.
+ * @param strategy FIFO для ранней заявки, LIFO для поздней.
+ * @return Индекс заявки или REQUEST_INDEX_NOT_FOUND, если заявок нет.
+ */
+int request_find(const Request requests[], int count, int book_id, IssueStrategy strategy);
 
 #endif
