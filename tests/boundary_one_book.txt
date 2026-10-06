@@ -1,0 +1,8 @@
+reading_days=2
+total_days=9
+
+book=1;Курочка ряба
+
+reader=1;Анна;1;1
+reader=2;Борис;1;2,4
+reader=3;Виктор;1;2,7
