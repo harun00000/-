@@ -113,7 +113,9 @@ bool config_load(const char *filename, Config *config){
 
     // очищаем Config перед заполнением
     *config = (Config){0};
+    config->total_days = DEFAULT_TOTAL_DAYS;
     config->issue_strategy = ISSUE_FIFO;
+    config->request_rule = REQUEST_ON_UNAVAILABLE;
     char line[CONFIG_LINE_SIZE];
     int line_number = 0;
     bool has_reading_days = false;
@@ -161,9 +163,9 @@ bool config_load(const char *filename, Config *config){
 
         } else if (strcmp(line, "total_days") == 0)
         {
-            if (has_total_days || !parse_number(value, 0, &config->total_days))
+            if (has_total_days || !parse_number(value, 1, &config->total_days))
             {
-                error = "total_days должен быть неотрицательным целым числом и задаваться один раз";
+                error = "total_days должен быть положительным целым числом и задаваться один раз";
                 break;
             }
             has_total_days = true;
@@ -179,6 +181,20 @@ bool config_load(const char *filename, Config *config){
             } else
             {
                 error = "strategy должен быть fifo или lifo";
+                break;
+            }
+
+        } else if (strcmp(line, "request_rule") == 0)
+        {
+            if (strcmp(value, "on_unavailable") == 0)
+            {
+                config->request_rule = REQUEST_ON_UNAVAILABLE;
+            } else if (strcmp(value, "always_wait") == 0)
+            {
+                config->request_rule = REQUEST_ALWAYS_WAIT;
+            } else
+            {
+                error = "request_rule должен быть on_unavailable или always_wait";
                 break;
             }
 
@@ -258,9 +274,9 @@ bool config_load(const char *filename, Config *config){
     }
 
     // проверяем, что все обязательные данные есть
-    if (!has_reading_days || !has_total_days || config->book_count == 0 || config->reader_count == 0)
+    if (!has_reading_days || config->book_count == 0 || config->reader_count == 0)
     {
-        fprintf(stderr, "Ошибка конфигурации: нужны reading_days, total_days, книги и читатели\n");
+        fprintf(stderr, "Ошибка конфигурации: нужны reading_days, книги и читатели\n");
         return false;
     }
 

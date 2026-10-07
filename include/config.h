@@ -3,6 +3,8 @@
 
 #include "simulation.h"
 
+enum { DEFAULT_TOTAL_DAYS = 13 };
+
 /**
  * @brief Исходные данные симуляции из файла.
  */
@@ -16,6 +18,7 @@ typedef struct Config{
     int reading_days;
     int total_days;
     IssueStrategy issue_strategy;
+    RequestRule request_rule;
 } Config;
 
 /**

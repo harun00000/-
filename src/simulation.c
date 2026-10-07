@@ -20,7 +20,7 @@ static Reader *find_reader(Simulation *simulation, int reader_id){
 }
 
 void simulation_initialization(Simulation *simulation, const Book books[], int book_count,
-     const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy){
+     const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy, RequestRule request_rule){
     SOFT_ASSERT_VOID(simulation != NULL, "Указатель на симуляцию = NULL");
     SOFT_ASSERT_VOID(books != NULL, "Указатель на массив книг = NULL");
     SOFT_ASSERT_VOID(readers != NULL, "Указатель на массив читателей = NULL");
@@ -31,6 +31,8 @@ void simulation_initialization(Simulation *simulation, const Book books[], int b
     SOFT_ASSERT_VOID(librarian != NULL, "Указатель на библиотекаря = NULL");
     SOFT_ASSERT_VOID(librarian->id > 0, "Идентификатор библиотекаря <= 0");
     SOFT_ASSERT_VOID(issue_strategy == ISSUE_FIFO || issue_strategy == ISSUE_LIFO, "Неизвестная стратегия выдачи");
+    SOFT_ASSERT_VOID(request_rule == REQUEST_ON_UNAVAILABLE || request_rule == REQUEST_ALWAYS_WAIT,
+        "Неизвестное правило формирования заявок");
 
     // проверяем корректность книг и отсутствие одинаковых айдишников
     for (int idx = 0; idx < book_count; ++idx)
@@ -72,6 +74,7 @@ void simulation_initialization(Simulation *simulation, const Book books[], int b
     simulation->reader_count = reader_count;
     simulation->reading_days = reading_days;
     simulation->issue_strategy = issue_strategy;
+    simulation->request_rule = request_rule;
 
 
     // копируем книги и отмечаем, что у них пока нет владельца и резерва
@@ -228,6 +231,23 @@ static void reservation(Simulation *simulation, Reader *reader, int day){
 }
 
 static void wishes(Simulation *simulation, Reader *reader, int day){
+    bool wait_for_books = false;
+    if (simulation->request_rule == REQUEST_ALWAYS_WAIT)
+    {
+        // проверяем весь список до выдачи обычных желаемых книг
+        for (int idx = 0; idx < reader->wanted_count; ++idx)
+        {
+            int index = find_book_by_id(simulation->books, simulation->book_count, reader->wanted_books[idx]);
+            SOFT_ASSERT_VOID(index >= 0, "У читателя указан неизвестный айди книги");
+
+            if ((simulation->owner_ids[index] != NO_READER && simulation->owner_ids[index] != reader->id) ||
+                (simulation->reserved_reader_ids[index] != NO_READER && simulation->reserved_reader_ids[index] != reader->id))
+            {
+                wait_for_books = true;
+                break;
+            }
+        }
+    }
 
      // проходим по всем желаемым книгам читателя
     int idx = 0;
@@ -246,6 +266,12 @@ static void wishes(Simulation *simulation, Reader *reader, int day){
         {
             printf("Книга уже у читателя; повторная выдача невозможна\n");
             reader_delete_wish(reader, book_id);
+            continue;
+        }
+
+        if (wait_for_books && simulation->owner_ids[index] == NO_READER && simulation->reserved_reader_ids[index] == NO_READER)
+        {
+            ++idx;
             continue;
         }
 

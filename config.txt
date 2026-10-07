@@ -1,6 +1,6 @@
 reading_days=3
-total_days=13
 strategy=fifo
+request_rule=on_unavailable
 
 book=1;Курочка ряба
 book=2;Убийство в Реутовском экспрессе. 2026г.

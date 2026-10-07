@@ -6,7 +6,9 @@ cd -- "$project_dir" || exit 1
 passed=0
 for config in normal_config.txt boundary_one_book.txt boundary_one_day.txt
 do
-    if ./build/library_sim --config "tests/$config" > /dev/null
+    if output=$(./build/library_sim --config "tests/$config") &&
+        { [ "$config" != normal_config.txt ] ||
+          printf '%s\n' "$output" | grep -Fxq 'Библиотека НАЧАЛА РАБОТАТЬ!. Количество дней работы: 13'; }
     then
         echo "PASS: $config"
         passed=$((passed + 1))
@@ -24,8 +26,19 @@ else
     echo "FAIL: strategy_lifo.txt"
 fi
 
-echo "Tests passed: $passed/4"
-if [ "$passed" -ne 4 ]
+if output=$(./build/library_sim --config tests/request_always_wait.txt) &&
+    printf '%s\n' "$output" | grep -Fq 'Создана заявка №1: Борис, книга Курочка ряба, день 2' &&
+    ! printf '%s\n' "$output" | grep -Fq 'Борис получает книгу Колобок' &&
+    ! printf '%s\n' "$output" | grep -Fq 'Борис, книга Колобок'
+then
+    echo "PASS: request_always_wait.txt"
+    passed=$((passed + 1))
+else
+    echo "FAIL: request_always_wait.txt"
+fi
+
+echo "Tests passed: $passed/5"
+if [ "$passed" -ne 5 ]
 then
     exit 1
 fi

@@ -10,6 +10,11 @@ typedef enum IssueStrategy{
     ISSUE_LIFO
 } IssueStrategy;
 
+typedef enum RequestRule{
+    REQUEST_ON_UNAVAILABLE,
+    REQUEST_ALWAYS_WAIT
+} RequestRule;
+
 /**
  * @brief Заявка читателя на получение книги.
  */

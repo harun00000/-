@@ -5,8 +5,7 @@
 #include <stdlib.h>
 
 enum{
-    READING_DAYS = 3,
-    TOTAL_DAYS = 13
+    READING_DAYS = 3
 };
 
 int main(int argc, char *argv[]){
@@ -38,8 +37,9 @@ int main(int argc, char *argv[]){
     int book_count = (int)(sizeof books / sizeof books[0]);
     int reader_count = (int)(sizeof readers / sizeof readers[0]);
     int reading_days = READING_DAYS;
-    int total_days = TOTAL_DAYS;
+    int total_days = DEFAULT_TOTAL_DAYS;
     IssueStrategy issue_strategy = ISSUE_FIFO;
+    RequestRule request_rule = REQUEST_ON_UNAVAILABLE;
     Config config;
 
     // если передан конфиг, то меняем стандартные данные на данные из файла
@@ -57,6 +57,7 @@ int main(int argc, char *argv[]){
         reading_days = config.reading_days;
         total_days = config.total_days;
         issue_strategy = config.issue_strategy;
+        request_rule = config.request_rule;
     }
 
     // т.к. параметры из командной строки имеют приоритет над данными из файла
@@ -74,7 +75,7 @@ int main(int argc, char *argv[]){
     logger_open("library.log");
     Simulation simulation;
     simulation_initialization(&simulation, selected_books, book_count, 
-        selected_readers, reader_count, reading_days, &librarian, issue_strategy);
+        selected_readers, reader_count, reading_days, &librarian, issue_strategy, request_rule);
     simulation_run(&simulation, total_days);
     logger_close();
     return EXIT_SUCCESS;

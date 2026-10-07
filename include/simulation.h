@@ -38,6 +38,7 @@ typedef struct Simulation{
     int reservation_days[MAX_BOOKS];    // дни создания соответствующих резервов
     int reading_days;
     IssueStrategy issue_strategy;
+    RequestRule request_rule;
 } Simulation;
 
 /**
@@ -51,9 +52,10 @@ typedef struct Simulation{
  * @param reading_days положительное число дней чтения одной книги.
  * @param librarian библиотекарь.
  * @param issue_strategy стратегия выдачи возвращённых книг.
+ * @param request_rule правило формирования заявок.
  */
 void simulation_initialization(Simulation *simulation, const Book books[], int book_count, 
-    const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy);
+    const Reader readers[], int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy, RequestRule request_rule);
 
 /**
  * @brief Работу библиотеки с первого дня по указанный день.
