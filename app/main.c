@@ -23,6 +23,11 @@ int main(int argc, char *argv[]){
         return EXIT_SUCCESS;
     }
 
+    if (!setup_signal_handlers())
+    {
+        return EXIT_FAILURE;
+    }
+
      // стандартные данные для запуска без конфига
     const Librarian librarian ={.id = 1, .name = "Никита Пичурин"};
     const Book books[] = {{1, "Курочка ряба"}, {2, "Убийство в Реутовском экспрессе. 2026г."}};

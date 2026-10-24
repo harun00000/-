@@ -1,4 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
 #include "simulation.h"
+#include "main_utils.h"
 #include "check.h"
 #include "logger.h"
 #include <stdio.h>
@@ -473,6 +475,9 @@ bool simulation_run(Simulation *simulation, int total_days){
     int created_readers = 0;
     bool created_librarian = false;
     bool success = false;
+    bool signals_blocked = false;
+    sigset_t stop_signals;
+    sigset_t previous_mask;
 
     int error = pthread_mutex_init(&simulation->mutex, NULL);
     if (error != 0)
@@ -498,6 +503,18 @@ bool simulation_run(Simulation *simulation, int total_days){
     }
 
     simulation->finished = false;
+
+    // новые потоки наследуют маску, сигналы будет получать главный поток
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    error = pthread_sigmask(SIG_BLOCK, &stop_signals, &previous_mask);
+    if (error != 0)
+    {
+        fprintf(stderr, "pthread_sigmask: %s\n", strerror(error));
+        goto destroy_semaphores;
+    }
+    signals_blocked = true;
     error = pthread_create(&librarian, NULL, librarian_thread, simulation);
     if (error != 0)
     {
@@ -516,12 +533,18 @@ bool simulation_run(Simulation *simulation, int total_days){
         }
         ++created_readers;
     }
+    check_pthread(pthread_sigmask(SIG_SETMASK, &previous_mask, NULL), "pthread_sigmask");
+    signals_blocked = false;
 
     // запускаем библиотеку
     printf("Библиотека НАЧАЛА РАБОТАТЬ!. Количество дней работы: %d\n", total_days);
     logger_write("Начало работы библиотеки: %d дней, срок чтения %d\n", total_days, simulation->reading_days);
     for (int day = FIRST_SIMULATION_DAY; day <= total_days; ++day)
     {
+        if (stop_requested)
+        {
+            break;
+        }
         check_pthread(pthread_mutex_lock(&simulation->mutex), "pthread_mutex_lock");
         simulation->current_day = day;
         check_pthread(pthread_mutex_unlock(&simulation->mutex), "pthread_mutex_unlock");
@@ -545,6 +568,10 @@ bool simulation_run(Simulation *simulation, int total_days){
     success = true;
 
 stop_threads:
+    if (signals_blocked)
+    {
+        check_pthread(pthread_sigmask(SIG_SETMASK, &previous_mask, NULL), "pthread_sigmask");
+    }
     // завершаем и те потоки, которые успели создаться при ошибке
     check_pthread(pthread_mutex_lock(&simulation->mutex), "pthread_mutex_lock");
     simulation->finished = true;
@@ -586,6 +613,11 @@ destroy_semaphores:
         return false;
     }
 
+    if (stop_requested)
+    {
+        printf("Получен сигнал завершения. Моделирование остановлено.\n");
+        logger_write("Получен сигнал завершения. Моделирование остановлено.\n");
+    }
     print_unfulfilled_requests(simulation);
     print_unreceived_reservations(simulation);
     printf("\nБиблиотека В.С.Ё.\n");

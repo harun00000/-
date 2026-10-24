@@ -92,6 +92,34 @@ run_test on_unavailable 2 -c "$test_dir/on_unavailable.txt" || echo 'FAIL: on_un
 run_test max_readers 25 -c "$test_dir/max_readers.txt" || echo 'FAIL: max_readers'
 run_test default 13 || echo 'FAIL: default'
 
+# Ждём начала работы и прерываем длинное моделирование.
+total=$((total + 1))
+if timeout -k 1s 10s bash -c '
+    set -e
+    "$1" -c tests/signal_config.txt > "$2/signal_output" 2> "$2/signal_errors" &
+    pid=$!
+    trap "kill -KILL $pid 2>/dev/null || true; wait $pid 2>/dev/null || true" EXIT
+    while ! grep -Fq "День 1: завершён" "$2/signal_output"
+    do
+        kill -0 "$pid" || exit 1
+        sleep 0.01
+    done
+    kill -TERM "$pid"
+    wait "$pid"
+    trap - EXIT
+    [ ! -s "$2/signal_errors" ]
+    grep -Fxq "Получен сигнал завершения. Моделирование остановлено." "$2/signal_output"
+    grep -Fxq "Статистика:" "$2/signal_output"
+    grep -Fxq "Библиотека В.С.Ё." "$2/signal_output"
+' bash "$binary" "$test_dir"
+then
+    echo 'PASS: signal'
+    passed=$((passed + 1))
+else
+    echo 'FAIL: signal'
+    cat "$test_dir/signal_errors" "$test_dir/signal_output"
+fi
+
 echo "Tests passed: $passed/$total"
 if [ "$passed" -ne "$total" ]
 then

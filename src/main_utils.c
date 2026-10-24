@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "main_utils.h"
 #include "check.h"
 #include <errno.h>
@@ -5,6 +6,28 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+volatile sig_atomic_t stop_requested = 0;
+
+static void handle_stop_signal(int signal_number){
+    (void)signal_number;
+    stop_requested = 1;
+}
+
+bool setup_signal_handlers(void){
+    // обработчик только запрашивает остановку
+    struct sigaction action = {0};
+    action.sa_handler = handle_stop_signal;
+    sigemptyset(&action.sa_mask);
+    sigaddset(&action.sa_mask, SIGINT);
+    sigaddset(&action.sa_mask, SIGTERM);
+    if (sigaction(SIGINT, &action, NULL) != 0 || sigaction(SIGTERM, &action, NULL) != 0)
+    {
+        perror("sigaction");
+        return false;
+    }
+    return true;
+}
 
 static bool parse_positive_number(const char *text, int *value){
     SOFT_ASSERT(text != NULL, "Указатель на строку числа = NULL", false);

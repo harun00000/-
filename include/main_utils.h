@@ -2,6 +2,15 @@
 #define MAIN_UTILS_H
 
 #include <stdbool.h>
+#include <signal.h>
+
+extern volatile sig_atomic_t stop_requested;
+
+/**
+ * @brief Устанавливает обработчики SIGINT и SIGTERM.
+ * @return true при успехе, false при ошибке установки.
+ */
+bool setup_signal_handlers(void);
 
 /**
  * @brief Структура опций для ввода через консоль.
