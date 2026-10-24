@@ -1,0 +1,9 @@
+reading_days=3
+total_days=2
+request_rule=always_wait
+
+book=1;Курочка ряба
+book=2;Колобок
+
+reader=1;Анна;1;1
+reader=2;Борис;2,1;2
