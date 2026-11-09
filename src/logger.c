@@ -13,15 +13,15 @@ enum
 
 static int log_fd = LOGGER_CLOSED;
 
-// открываем файл для логов
-bool logger_open(const char *filename)
+// открываем журнал с нужным режимом записи
+static bool logger_open_file(const char *filename, int flags)
 {
     SOFT_ASSERT(filename != NULL, "Ошибка логгера: имя файла = NULL", false);
+    SOFT_ASSERT(flags == (O_WRONLY | O_CREAT | O_TRUNC) || flags == (O_WRONLY | O_CREAT | O_APPEND),
+        "Недопустимый внутренний режим журнала", false);
     SOFT_ASSERT(log_fd == LOGGER_CLOSED || log_fd >= 0, "Некорректный дескриптор логгера", false);
     logger_close();
 
-    // создаём новый файл или очищаем старый
-    int flags = O_WRONLY | O_CREAT | O_TRUNC;
     int permissions = 0644;
 
     log_fd = open(filename, flags, permissions);
@@ -33,6 +33,16 @@ bool logger_open(const char *filename)
     }
 
     return true;
+}
+
+bool logger_open(const char *filename)
+{
+    return logger_open_file(filename, O_WRONLY | O_CREAT | O_TRUNC);
+}
+
+bool logger_open_append(const char *filename)
+{
+    return logger_open_file(filename, O_WRONLY | O_CREAT | O_APPEND);
 }
 
 void logger_write(const char *format, ...)

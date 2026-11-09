@@ -356,6 +356,107 @@ static void reservation(Simulation *simulation, Reader *reader, int day)
     }
 }
 
+static void create_reader_request(Simulation *simulation, Reader *reader, int index, int day)
+{
+    SOFT_ASSERT_VOID(simulation != NULL && reader != NULL, "Нет симуляции или читателя");
+    SOFT_ASSERT_VOID(reader->id > 0 && memchr(reader->name, '\0', sizeof reader->name) != NULL,
+        "Некорректный читатель для операции с книгой");
+    SOFT_ASSERT_VOID(simulation->book_count > 0 && simulation->book_count <= MAX_BOOKS && index >= 0 &&
+                         index < simulation->book_count,
+        "Индекс книги вне массива");
+    SOFT_ASSERT_VOID(
+        simulation->request_count >= 0 && simulation->request_count <= MAX_REQUESTS, "Количество заявок вне массива");
+    SOFT_ASSERT_VOID(day >= FIRST_SIMULATION_DAY, "Некорректный день заявки");
+    const Book *book = &simulation->books[index];
+    SOFT_ASSERT_VOID(memchr(book->name, '\0', sizeof book->name) != NULL, "Название книги в заявке не завершено нулём");
+    SOFT_ASSERT_VOID(simulation->reserved_reader_ids[index] != reader->id &&
+                         !request_exists(simulation->requests, simulation->request_count, book->id, reader->id),
+        "Заявка создаётся повторно или при собственном резерве");
+    // если заявки ещё нет, создаём её
+    SOFT_ASSERT_VOID(simulation->statistics.requests_created >= 0 && simulation->statistics.requests_created < INT_MAX,
+        "Счётчик статистики вне допустимого диапазона");
+    if (!request_create(simulation->requests, &simulation->request_count, book->id, reader->id, day))
+    {
+        fprintf(stderr, "Ошибка: не удалось создать заявку\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name, book->name, day);
+    ++simulation->statistics.requests_created;
+    logger_write(
+        "Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name, book->name, day);
+}
+
+static BookAttempt try_wanted_book(Simulation *simulation, Reader *reader, int index, int day, bool wait_for_books)
+{
+    SOFT_ASSERT(simulation != NULL && reader != NULL, "Нет симуляции или читателя", BOOK_WAITING);
+    SOFT_ASSERT(reader->id > 0 && memchr(reader->name, '\0', sizeof reader->name) != NULL,
+        "Некорректный читатель для операции с книгой", BOOK_WAITING);
+    SOFT_ASSERT(simulation->book_count > 0 && simulation->book_count <= MAX_BOOKS && index >= 0 &&
+                    index < simulation->book_count,
+        "Индекс книги вне массива", BOOK_WAITING);
+    SOFT_ASSERT(day >= FIRST_SIMULATION_DAY, "Некорректный день посещения", BOOK_WAITING);
+    int book_id = simulation->books[index].id;
+    const Book *book = &simulation->books[index];
+    SOFT_ASSERT(memchr(book->name, '\0', sizeof book->name) != NULL, "Название желаемой книги не завершено нулём",
+        BOOK_WAITING);
+    printf("%s пытается получить желаемую книгу %s\n", reader->name, book->name);
+
+    // удаляем из желаний уже выданную книгу
+    if (reader_has_book(reader, book_id))
+    {
+        printf("Книга уже у читателя; повторная выдача невозможна\n");
+        reader_delete_wish(reader, book_id);
+        return BOOK_RECEIVED;
+    }
+
+    if (wait_for_books && simulation->owner_ids[index] == NO_READER &&
+        simulation->reserved_reader_ids[index] == NO_READER)
+    {
+        return BOOK_WAITING;
+    }
+
+    // пробуем выдать книгу сразу
+    if (give_a_book(simulation, reader, index, day))
+    {
+        return BOOK_RECEIVED;
+    }
+
+    // сообщаем причину отказа в выдаче
+    if (simulation->owner_ids[index] != NO_READER)
+    {
+        Reader *owner = find_reader(simulation, simulation->owner_ids[index]);
+        SOFT_ASSERT(owner != NULL, "Владелец книги не найден", BOOK_WAITING);
+        printf("Книга недоступна: занята, находится у читателя %s\n", owner->name);
+        logger_write(
+            "Книга недоступна: %s находится у читателя %s, запросил %s\n", book->name, owner->name, reader->name);
+    }
+    else
+    {
+        SOFT_ASSERT(simulation->reserved_reader_ids[index] != NO_READER,
+            "Отказ в выдаче свободной незарезервированной книги", BOOK_WAITING);
+        Reader *reserved = find_reader(simulation, simulation->reserved_reader_ids[index]);
+        SOFT_ASSERT(reserved != NULL, "Читатель с резервом не найден", BOOK_WAITING);
+        printf("Книга недоступна: зарезервирована за читателем %s\n", reserved->name);
+        logger_write("Книга недоступна: %s зарезервирована за читателем %s, запросил %s\n", book->name, reserved->name,
+            reader->name);
+    }
+
+    // проверяем, нужно ли создавать новую заявку
+    if (simulation->reserved_reader_ids[index] == reader->id)
+    {
+        printf("Ваш резерв уже оформлен, получение только в более поздний день\n");
+    }
+    else if (request_exists(simulation->requests, simulation->request_count, book_id, reader->id))
+    {
+        printf("Активная заявка уже есть, повторная не создаётся\n");
+    }
+    else
+    {
+        return BOOK_REQUEST_NEEDED;
+    }
+    return BOOK_WAITING;
+}
+
 static void wishes(Simulation *simulation, Reader *reader, int day)
 {
     SOFT_ASSERT_VOID(simulation != NULL, "Указатель на симуляцию = NULL");
@@ -398,81 +499,16 @@ static void wishes(Simulation *simulation, Reader *reader, int day)
     {
         int book_id = reader->wanted_books[idx];
         int index = find_book_by_id(simulation->books, simulation->book_count, book_id);
-
         SOFT_ASSERT_VOID(index >= 0 && index < simulation->book_count, "У читателя указан неизвестный айди книги");
-
-        const Book *book = &simulation->books[index];
-        printf("%s пытается получить желаемую книгу %s\n", reader->name, book->name);
-
-        // удаляем из желаний уже выданную книгу
-        if (reader_has_book(reader, book_id))
+        BookAttempt attempt = try_wanted_book(simulation, reader, index, day, wait_for_books);
+        if (attempt == BOOK_REQUEST_NEEDED)
         {
-            printf("Книга уже у читателя; повторная выдача невозможна\n");
-            reader_delete_wish(reader, book_id);
-            continue;
+            create_reader_request(simulation, reader, index, day);
         }
-
-        if (wait_for_books && simulation->owner_ids[index] == NO_READER &&
-            simulation->reserved_reader_ids[index] == NO_READER)
+        if (attempt != BOOK_RECEIVED)
         {
             ++idx;
-            continue;
         }
-
-        // пробуем выдать книгу сразу
-        if (give_a_book(simulation, reader, index, day))
-        {
-            continue;
-        }
-
-        // сообщаем причину отказа в выдаче
-        if (simulation->owner_ids[index] != NO_READER)
-        {
-            Reader *owner = find_reader(simulation, simulation->owner_ids[index]);
-            SOFT_ASSERT_VOID(owner != NULL, "Владелец книги не найден");
-            printf("Книга недоступна: занята, находится у читателя %s\n", owner->name);
-            logger_write(
-                "Книга недоступна: %s находится у читателя %s, запросил %s\n", book->name, owner->name, reader->name);
-        }
-        else
-        {
-            SOFT_ASSERT_VOID(simulation->reserved_reader_ids[index] != NO_READER,
-                "Отказ в выдаче свободной незарезервированной книги");
-            Reader *reserved = find_reader(simulation, simulation->reserved_reader_ids[index]);
-            SOFT_ASSERT_VOID(reserved != NULL, "Читатель с резервом не найден");
-            printf("Книга недоступна: зарезервирована за читателем %s\n", reserved->name);
-            logger_write("Книга недоступна: %s зарезервирована за читателем %s, запросил %s\n", book->name,
-                reserved->name, reader->name);
-        }
-
-        // проверяем, нужно ли создавать новую заявку
-        if (simulation->reserved_reader_ids[index] == reader->id)
-        {
-            printf("Ваш резерв уже оформлен, получение только в более поздний день\n");
-        }
-        else if (request_exists(simulation->requests, simulation->request_count, book_id, reader->id))
-        {
-            printf("Активная заявка уже есть, повторная не создаётся\n");
-        }
-        else
-        {
-            // если заявки ещё нет, создаём её
-            SOFT_ASSERT_VOID(
-                simulation->statistics.requests_created >= 0 && simulation->statistics.requests_created < INT_MAX,
-                "Счётчик статистики вне допустимого диапазона");
-            if (!request_create(simulation->requests, &simulation->request_count, book_id, reader->id, day))
-            {
-                fprintf(stderr, "Ошибка: не удалось создать заявку\n");
-                exit(EXIT_FAILURE);
-            }
-            printf("Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name, book->name,
-                day);
-            ++simulation->statistics.requests_created;
-            logger_write("Создана заявка №%d: %s, книга %s, день %d\n", simulation->request_count, reader->name,
-                book->name, day);
-        }
-
-        ++idx;
     }
 }
 
@@ -553,7 +589,8 @@ static void print_unreceived_reservations(Simulation *simulation)
     }
 }
 
-#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6)
+#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) &&                   \
+    !defined(LIBRARY_PROCESS_10)
 typedef struct ReaderThreadArgs
 {
     Simulation *simulation;
@@ -691,6 +728,15 @@ bool simulation_validate(const Simulation *simulation, int total_days)
         for (int jdx = 0; jdx < reader->visit_count; ++jdx)
         {
             SOFT_ASSERT(reader->visit_days[jdx] >= FIRST_SIMULATION_DAY, "День посещения <= 0", false);
+            // пользовательские сроки должны позволять представить день возможного возврата
+            if (reader->wanted_count > 0 && reader->visit_days[jdx] <= total_days &&
+                reader->visit_days[jdx] > INT_MAX - simulation->reading_days)
+            {
+                fprintf(stderr,
+                    "Ошибка параметров: день посещения %d и срок чтения %d не позволяют вычислить день возврата\n",
+                    reader->visit_days[jdx], simulation->reading_days);
+                return false;
+            }
         }
         for (int jdx = 0; jdx < reader->wanted_count; ++jdx)
         {
@@ -773,7 +819,8 @@ bool simulation_validate(const Simulation *simulation, int total_days)
     return true;
 }
 
-#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6)
+#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) &&                   \
+    !defined(LIBRARY_PROCESS_10)
 bool simulation_run(Simulation *simulation, int total_days)
 {
     if (!simulation_validate(simulation, total_days))
@@ -975,6 +1022,19 @@ void simulation_process_returns(Simulation *simulation, int day)
     returning(simulation, day);
 }
 
+static void reader_arrival(Simulation *simulation, Reader *reader, int day)
+{
+    SOFT_ASSERT_VOID(simulation != NULL && reader != NULL, "Нет симуляции или читателя");
+    SOFT_ASSERT_VOID(reader->id > 0 && memchr(reader->name, '\0', sizeof reader->name) != NULL,
+        "Некорректный читатель для регистрации посещения");
+    SOFT_ASSERT_VOID(day >= FIRST_SIMULATION_DAY, "Некорректный день посещения");
+    SOFT_ASSERT_VOID(simulation->statistics.reader_visits >= 0 && simulation->statistics.reader_visits < INT_MAX,
+        "Счётчик посещений вне допустимого диапазона");
+    printf("  Приход читателя: %s (id %d)\n", reader->name, reader->id);
+    ++simulation->statistics.reader_visits;
+    logger_write("Приход читателя: %s (id %d), день %d\n", reader->name, reader->id, day);
+}
+
 void simulation_process_reader(Simulation *simulation, int reader_index, int day)
 {
     SOFT_ASSERT_VOID(simulation != NULL, "Указатель на симуляцию = NULL");
@@ -996,14 +1056,93 @@ void simulation_process_reader(Simulation *simulation, int reader_index, int day
         "Неизвестное правило формирования заявок");
     if (is_reader_visit_on_said_day(reader, day))
     {
-        SOFT_ASSERT_VOID(simulation->statistics.reader_visits >= 0 && simulation->statistics.reader_visits < INT_MAX,
-            "Счётчик посещений вне допустимого диапазона");
-        printf("  Приход читателя: %s (id %d)\n", reader->name, reader->id);
-        ++simulation->statistics.reader_visits;
-        logger_write("Приход читателя: %s (id %d), день %d\n", reader->name, reader->id, day);
+        reader_arrival(simulation, reader, day);
 
         // обрабатываем его резервы, потом обычные желания
         reservation(simulation, reader, day);
         wishes(simulation, reader, day);
     }
 }
+
+#ifdef LIBRARY_PROCESS_10
+static Reader *ipc_reader(Simulation *simulation, int reader_index, int day)
+{
+    SOFT_ASSERT(simulation != NULL, "Указатель на симуляцию = NULL", NULL);
+    SOFT_ASSERT(simulation->reader_count > 0 && simulation->reader_count <= MAX_READERS && reader_index >= 0 &&
+                    reader_index < simulation->reader_count,
+        "Внутренний индекс читателя вне массива", NULL);
+    SOFT_ASSERT(day >= FIRST_SIMULATION_DAY, "Некорректный день посещения", NULL);
+    SOFT_ASSERT(simulation->book_count > 0 && simulation->book_count <= MAX_BOOKS && simulation->request_count >= 0 &&
+                    simulation->request_count <= MAX_REQUESTS,
+        "Размеры массивов модели вне допустимых границ", NULL);
+    Reader *reader = &simulation->readers[reader_index];
+    SOFT_ASSERT(
+        reader->id > 0 && memchr(reader->name, '\0', sizeof reader->name) != NULL, "Некорректный читатель", NULL);
+    SOFT_ASSERT(reader->wanted_count >= 0 && reader->wanted_count <= MAX_WANTED_BOOKS && reader->owned_count >= 0 &&
+                    reader->owned_count <= READER_BOOK_CAPACITY,
+        "Размеры массивов читателя вне допустимых границ", NULL);
+    return &simulation->readers[reader_index];
+}
+
+void simulation_reader_begin(Simulation *simulation, int reader_index, int day)
+{
+    Reader *reader = ipc_reader(simulation, reader_index, day);
+    SOFT_ASSERT_VOID(reader != NULL, "Нет читателя для посещения");
+    SOFT_ASSERT_VOID(is_reader_visit_on_said_day(reader, day), "Посещение отсутствует в расписании");
+    reader_arrival(simulation, reader, day);
+}
+
+void simulation_reader_take_reservations(Simulation *simulation, int reader_index, int day)
+{
+    Reader *reader = ipc_reader(simulation, reader_index, day);
+    SOFT_ASSERT_VOID(reader != NULL, "Нет читателя для получения резервов");
+    reservation(simulation, reader, day);
+}
+
+int simulation_reader_book_status(const Simulation *simulation, int reader_index, int book_id)
+{
+    SOFT_ASSERT(simulation != NULL, "Указатель на симуляцию = NULL", BOOK_NOT_WANTED);
+    SOFT_ASSERT(simulation->reader_count > 0 && simulation->reader_count <= MAX_READERS && reader_index >= 0 &&
+                    reader_index < simulation->reader_count,
+        "Внутренний индекс читателя вне массива", BOOK_NOT_WANTED);
+    SOFT_ASSERT(simulation->book_count > 0 && simulation->book_count <= MAX_BOOKS, "Количество книг вне массива",
+        BOOK_NOT_WANTED);
+    const Reader *reader = &simulation->readers[reader_index];
+    SOFT_ASSERT(reader->wanted_count >= 0 && reader->wanted_count <= MAX_WANTED_BOOKS, "Количество желаний вне массива",
+        BOOK_NOT_WANTED);
+    int index = find_book_by_id(simulation->books, simulation->book_count, book_id);
+    SOFT_ASSERT(index >= 0 && index < simulation->book_count, "Неизвестная книга в запросе", BOOK_NOT_WANTED);
+    bool wanted = false;
+    for (int idx = 0; idx < reader->wanted_count; ++idx)
+    {
+        wanted = wanted || reader->wanted_books[idx] == book_id;
+    }
+    if (!wanted)
+    {
+        return BOOK_NOT_WANTED;
+    }
+    bool unavailable =
+        (simulation->owner_ids[index] != NO_READER && simulation->owner_ids[index] != reader->id) ||
+        (simulation->reserved_reader_ids[index] != NO_READER && simulation->reserved_reader_ids[index] != reader->id);
+    return unavailable ? BOOK_UNAVAILABLE : BOOK_AVAILABLE;
+}
+
+BookAttempt simulation_reader_try_book(
+    Simulation *simulation, int reader_index, int book_id, int day, bool wait_for_books)
+{
+    Reader *reader = ipc_reader(simulation, reader_index, day);
+    SOFT_ASSERT(reader != NULL, "Нет читателя для выдачи", BOOK_WAITING);
+    int index = find_book_by_id(simulation->books, simulation->book_count, book_id);
+    SOFT_ASSERT(index >= 0 && index < simulation->book_count, "Неизвестная книга в запросе", BOOK_WAITING);
+    return try_wanted_book(simulation, reader, index, day, wait_for_books);
+}
+
+void simulation_reader_request_book(Simulation *simulation, int reader_index, int book_id, int day)
+{
+    Reader *reader = ipc_reader(simulation, reader_index, day);
+    SOFT_ASSERT_VOID(reader != NULL, "Нет читателя для заявки");
+    int index = find_book_by_id(simulation->books, simulation->book_count, book_id);
+    SOFT_ASSERT_VOID(index >= 0 && index < simulation->book_count, "Неизвестная книга в запросе");
+    create_reader_request(simulation, reader, index, day);
+}
+#endif

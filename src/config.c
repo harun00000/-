@@ -15,6 +15,7 @@ enum
 static bool parse_number(const char *text, int minimum, int *value)
 {
     SOFT_ASSERT(text != NULL, "Указатель на строку = NULL", false);
+    SOFT_ASSERT(minimum >= 0, "Отрицательная нижняя граница разбора числа", false);
     SOFT_ASSERT(value != NULL, "Указатель на число = NULL", false);
 
     char *end;
@@ -303,6 +304,9 @@ bool config_load(const char *filename, Config *config)
         fprintf(stderr, "Ошибка конфигурации: нужны reading_days, книги и читатели\n");
         return false;
     }
+
+    SOFT_ASSERT(config->reading_days > 0 && config->total_days > 0,
+        "Парсер сформировал неположительный срок чтения или моделирования", false);
 
     // проверяем, что все желаемые книги реально есть в библиотеке
     for (int idx = 0; idx < config->reader_count; ++idx)

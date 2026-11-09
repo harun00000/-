@@ -71,6 +71,7 @@ static bool process_post(sem_t *semaphore)
     return true;
 }
 
+// дети повторяют ожидание после EINTR, остановку им сообщает родитель
 static bool child_wait(sem_t *semaphore)
 {
     SOFT_ASSERT(semaphore != NULL, "Указатель на семафор = NULL", false);
@@ -133,6 +134,7 @@ static bool check_children(ChildProcess children[], int count, bool finishing)
     return success;
 }
 
+// родитель ждёт семафор и одновременно следит за сигналом и завершением детей
 static WaitResult parent_wait(sem_t *semaphore, ChildProcess children[], int count, bool interruptible)
 {
     SOFT_ASSERT(semaphore != NULL, "Указатель на семафор = NULL", WAIT_FAILED);
@@ -178,6 +180,7 @@ static WaitResult parent_wait(sem_t *semaphore, ChildProcess children[], int cou
     }
 }
 
+// индекс -1 задаёт роль библиотекаря, остальные индексы задают читателей
 static int child_run(ProcessShared *shared, int reader_index)
 {
     SOFT_ASSERT(shared != NULL && shared != MAP_FAILED, "Некорректный указатель на shared memory", EXIT_FAILURE);
@@ -274,10 +277,13 @@ static bool reap_children(ChildProcess children[], int count)
     }
 }
 
+// готовим общую модель до создания детей, при ошибке сохраняем учёт уже созданного
 static bool prepare_shared(ProcessResources *resources, const Simulation *simulation)
 {
     SOFT_ASSERT(resources != NULL, "Указатель на ресурсы процессов = NULL", false);
-    SOFT_ASSERT(simulation != NULL, "Указатель на симуляцию = NULL", false);
+    SOFT_ASSERT(simulation != NULL && simulation->book_count > 0 && simulation->book_count <= MAX_BOOKS &&
+                    simulation->request_count >= 0 && simulation->request_count <= MAX_REQUESTS,
+        "Размеры массивов модели вне допустимых границ", false);
     SOFT_ASSERT(simulation->reader_count > 0 && simulation->reader_count <= MAX_READERS,
         "Количество читателей вне массива", false);
     SOFT_ASSERT(resources->fd == -1 && resources->shared == MAP_FAILED && !resources->shm_created &&
@@ -344,9 +350,16 @@ static bool prepare_shared(ProcessResources *resources, const Simulation *simula
     return true;
 }
 
+// дети наследуют готовые IPC-ресурсы и выполняют только свою роль
 static bool start_children(ProcessResources *resources)
 {
     SOFT_ASSERT(resources != NULL, "Указатель на ресурсы процессов = NULL", false);
+    SOFT_ASSERT(resources->initialized >= 0 && resources->initialized <= MAX_READERS + 3,
+        "Количество подготовленных семафоров вне массива", false);
+    for (int idx = 0; idx < resources->initialized; ++idx)
+    {
+        SOFT_ASSERT(resources->semaphores[idx] != NULL, "Не задан указатель на подготовленный семафор", false);
+    }
     SOFT_ASSERT(resources->shared != NULL && resources->shared != MAP_FAILED && resources->state_ready,
         "Общее состояние не подготовлено", false);
     SOFT_ASSERT(
@@ -397,6 +410,7 @@ static bool start_children(ProcessResources *resources)
     return true;
 }
 
+// в каждом дне полностью заканчиваем возвраты перед запуском читателей
 static bool run_process_days(ProcessResources *resources, int total_days)
 {
     SOFT_ASSERT(resources != NULL, "Указатель на ресурсы процессов = NULL", false);
@@ -463,6 +477,7 @@ static bool run_process_days(ProcessResources *resources, int total_days)
     return true;
 }
 
+// сначала останавливаем и собираем детей, затем освобождаем их общие ресурсы
 static bool cleanup_processes(ProcessResources *resources, Simulation *simulation)
 {
     SOFT_ASSERT(resources != NULL, "Указатель на ресурсы процессов = NULL", false);

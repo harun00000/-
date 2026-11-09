@@ -6,10 +6,11 @@
 #include "request.h"
 #include "librarian.h"
 #include "statistics.h"
-#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6)
+#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) &&                   \
+    !defined(LIBRARY_PROCESS_10)
 #include <pthread.h>
 #endif
-#ifndef LIBRARY_PROCESS_6
+#if !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) && !defined(LIBRARY_PROCESS_10)
 #include <semaphore.h>
 #endif
 
@@ -50,15 +51,49 @@ typedef struct Simulation
 
     int current_day;
     bool finished;
-#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6)
+#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) &&                   \
+    !defined(LIBRARY_PROCESS_10)
     pthread_mutex_t mutex;
 #endif
-#ifndef LIBRARY_PROCESS_6
+#if !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) && !defined(LIBRARY_PROCESS_10)
     sem_t librarian_start;
     sem_t reader_start[MAX_READERS];
     sem_t phase_done;
 #endif
 } Simulation;
+
+/** @brief Результат попытки получить желаемую книгу. */
+typedef enum BookAttempt
+{
+    BOOK_RECEIVED,
+    BOOK_WAITING,
+    BOOK_REQUEST_NEEDED
+} BookAttempt;
+
+#ifdef LIBRARY_PROCESS_10
+enum
+{
+    BOOK_NOT_WANTED = -1,
+    BOOK_AVAILABLE,
+    BOOK_UNAVAILABLE
+};
+
+/** @brief Отмечает приход читателя; вызывающий код проверяет расписание. */
+void simulation_reader_begin(Simulation *simulation, int reader_index, int day);
+
+/** @brief Выдаёт доступные резервы перед обработкой обычных желаний. */
+void simulation_reader_take_reservations(Simulation *simulation, int reader_index, int day);
+
+/** @brief Возвращает доступность желаемой книги без изменения состояния. */
+int simulation_reader_book_status(const Simulation *simulation, int reader_index, int book_id);
+
+/** @brief Выполняет одну попытку выдачи в рамках последовательного посещения. */
+BookAttempt simulation_reader_try_book(
+    Simulation *simulation, int reader_index, int book_id, int day, bool wait_for_books);
+
+/** @brief Создаёт новую заявку после отказа в выдаче. */
+void simulation_reader_request_book(Simulation *simulation, int reader_index, int book_id, int day);
+#endif
 
 /**
  * @brief Подготавливает симуляцию с заданными книгами и читателями.
@@ -77,7 +112,8 @@ void simulation_initialization(Simulation *simulation, const Book books[], int b
     int reader_count, int reading_days, const Librarian *librarian, IssueStrategy issue_strategy,
     RequestRule request_rule);
 
-#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6)
+#if !defined(LIBRARY_PROCESS_4_5) && !defined(LIBRARY_PROCESS_6) && !defined(LIBRARY_PROCESS_7_8) &&                   \
+    !defined(LIBRARY_PROCESS_10)
 /**
  * @brief Работу библиотеки с первого дня по указанный день.
  *

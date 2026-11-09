@@ -17,6 +17,9 @@ void statistics_initialization(Statistics *statistics)
 void statistics_print(const Statistics *statistics)
 {
     SOFT_ASSERT_VOID(statistics != NULL, "Указатель на статистику = NULL");
+    SOFT_ASSERT_VOID(statistics->requests_completed <= statistics->books_returned &&
+                         statistics->requests_completed <= statistics->notifications_sent,
+        "Выполненных заявок больше, чем возвратов или уведомлений");
 
     SOFT_ASSERT_VOID(statistics->reader_visits >= 0 && statistics->books_given >= 0 &&
                          statistics->books_returned >= 0 && statistics->requests_created >= 0 &&

@@ -11,6 +11,7 @@
  * Итоговое состояние сохраняется в simulation.
  * @return true при естественном завершении или остановке по сигналу.
  */
+// процессы наследуют общую модель и неименованные семафоры при fork
 bool process_4_5_run(Simulation *simulation, int total_days);
 
 #endif

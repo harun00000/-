@@ -11,6 +11,9 @@
  */
 bool logger_open(const char *filename);
 
+/** @brief Открывает журнал для добавления сообщений независимыми процессами. */
+bool logger_open_append(const char *filename);
+
 /**
  * @brief Записывает сообщение в лог файл.
  *

@@ -119,7 +119,7 @@ report_test script_default 13
 report_test script_override 20 -c config.txt -d 20 -r 5
 binary=./build/library_4_5
 
-# SIGTERM отправляется только родителю, SIGINT — всей группе, как при Ctrl+C.
+# SIGTERM отправляется только родителю, SIGINT - всей группе, как при Ctrl+C.
 # До сигнала проверяем реальные дочерние процессы и отсутствие рабочих потоков.
 for signal in TERM INT
 do
