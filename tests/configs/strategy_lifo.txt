@@ -1,0 +1,9 @@
+reading_days=3
+total_days=4
+strategy=lifo
+
+book=1;Курочка ряба
+
+reader=1;Анна;1;1
+reader=2;Борис;1;2
+reader=3;Виктор;1;3
